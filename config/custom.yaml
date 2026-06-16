@@ -7,12 +7,16 @@ zotero:
     - type: user
       id: ${oc.env:ZOTERO_ID}
       api_key: ${oc.env:ZOTERO_KEY}
-      include_path: ["test/**"]
+      include_path:
+        - "test"
+        - "test/**"
       ignore_path: null
     - type: group
       id: ${oc.env:ZOTERO_GROUP_ID}
       api_key: ${oc.env:ZOTERO_KEY}
-      include_path: ["test/**"]
+      include_path:
+        - "test"
+        - "test/**"
       ignore_path: null
 
 email:
