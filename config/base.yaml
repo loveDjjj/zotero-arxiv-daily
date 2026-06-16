@@ -3,6 +3,7 @@ zotero:
   api_key: ??? # An Zotero API key with read access.
   include_path: null # A list of glob patterns marking the Zotero collections that should be included. Example: ["2026/survey/**","2026/reading-group/**"]
   ignore_path: null # A list of glob patterns marking the Zotero collections that should be excluded. Example: ["2026/ignore/**","archive/**"]
+  libraries: null # Optional list of Zotero libraries. If set, it overrides the legacy single-library fields above. Each item supports: type (user/group), id, api_key, include_path, ignore_path.
 
 source:
   arxiv:

@@ -77,6 +77,8 @@ zotero:
   user_id: ${oc.env:ZOTERO_ID}
   api_key: ${oc.env:ZOTERO_KEY}
   include_path: null # Or e.g. ["2026/survey/**", "2026/reading-group/**"]
+  ignore_path: null
+  libraries: null # Optional multi-library mode. See example below.
 
 email:
   sender: ${oc.env:SENDER}
@@ -102,6 +104,23 @@ executor:
   source: ['arxiv']
 ```
 Set `source.arxiv.include_cross_list: true` if you want cross-listed papers included.
+
+If you want to combine multiple Zotero libraries, including group libraries, you can use:
+```yaml
+zotero:
+  libraries:
+    - type: user
+      id: ${oc.env:ZOTERO_ID}
+      api_key: ${oc.env:ZOTERO_KEY}
+      include_path: ["personal/active/**"]
+      ignore_path: ["personal/archive/**"]
+    - type: group
+      id: ${oc.env:ZOTERO_GROUP_ID}
+      api_key: ${oc.env:ZOTERO_KEY}
+      include_path: ["shared/reading-list/**"]
+      ignore_path: null
+```
+When `zotero.libraries` is set, it overrides the legacy top-level `zotero.user_id`, `zotero.api_key`, `zotero.include_path`, and `zotero.ignore_path` fields.
 >[!NOTE]
 > `${oc.env:XXX,yyy}` means the value of the environment variable `XXX`. If the variable is not set, the default value `yyy` will be used.
 
@@ -111,6 +130,8 @@ zotero:
   user_id: ??? # User ID of your Zotero account.
   api_key: ??? # An Zotero API key with read access.
   include_path: null # A list of glob patterns marking the Zotero collections that should be included. Example: ["2026/survey/**", "2026/reading-group/**"]
+  ignore_path: null # A list of glob patterns marking the Zotero collections that should be excluded. Example: ["2026/ignore/**","archive/**"]
+  libraries: null # Optional list of Zotero libraries. Each item supports: type (user/group), id, api_key, include_path, ignore_path. When set, this overrides the top-level Zotero fields above.
 
 source:
   arxiv:

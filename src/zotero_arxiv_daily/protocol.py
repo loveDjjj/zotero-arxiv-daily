@@ -109,3 +109,5 @@ class CorpusPaper:
     abstract: str
     added_date: datetime
     paths: list[str]
+    library_type: Optional[str] = None
+    library_id: Optional[str] = None

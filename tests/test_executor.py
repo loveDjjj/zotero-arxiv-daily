@@ -1,11 +1,11 @@
-"""Tests for zotero_arxiv_daily.executor: normalize_path_patterns, filter_corpus, fetch_zotero_corpus, E2E."""
+"""Tests for zotero_arxiv_daily.executor: config normalization, filtering, fetch, E2E."""
 
 from datetime import datetime
 
 import pytest
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf, open_dict
 
-from zotero_arxiv_daily.executor import Executor, normalize_path_patterns
+from zotero_arxiv_daily.executor import Executor, build_zotero_library_configs, normalize_path_patterns
 from zotero_arxiv_daily.protocol import CorpusPaper
 
 
@@ -43,6 +43,59 @@ def test_normalize_path_patterns_accepts_empty_list():
 
 def test_normalize_path_patterns_accepts_none():
     assert normalize_path_patterns(None, "include_path") is None
+
+
+# ---------------------------------------------------------------------------
+# build_zotero_library_configs
+# ---------------------------------------------------------------------------
+
+
+def test_build_zotero_library_configs_uses_legacy_single_library_config(config):
+    libraries = build_zotero_library_configs(config.zotero)
+
+    assert len(libraries) == 1
+    assert libraries[0].library_type == "user"
+    assert libraries[0].library_id == "000000"
+    assert libraries[0].api_key == "fake-zotero-key"
+    assert libraries[0].include_path_patterns is None
+    assert libraries[0].ignore_path_patterns is None
+
+
+def test_build_zotero_library_configs_prefers_explicit_libraries(config):
+    with open_dict(config):
+        config.zotero.libraries = [
+            {
+                "type": "user",
+                "id": "u-1",
+                "api_key": "user-key",
+                "include_path": ["personal/**"],
+                "ignore_path": ["personal/archive/**"],
+            },
+            {
+                "type": "group",
+                "id": "g-2",
+                "api_key": "group-key",
+                "include_path": ["group/active/**"],
+                "ignore_path": None,
+            },
+        ]
+
+    libraries = build_zotero_library_configs(config.zotero)
+
+    assert [lib.library_type for lib in libraries] == ["user", "group"]
+    assert [lib.library_id for lib in libraries] == ["u-1", "g-2"]
+    assert libraries[0].include_path_patterns == ["personal/**"]
+    assert libraries[0].ignore_path_patterns == ["personal/archive/**"]
+    assert libraries[1].include_path_patterns == ["group/active/**"]
+    assert libraries[1].ignore_path_patterns is None
+
+
+def test_build_zotero_library_configs_rejects_unknown_library_type(config):
+    with open_dict(config):
+        config.zotero.libraries = [{"type": "team", "id": "x", "api_key": "k"}]
+
+    with pytest.raises(ValueError, match="must be 'user' or 'group'"):
+        build_zotero_library_configs(config.zotero)
 
 
 # ---------------------------------------------------------------------------
@@ -100,6 +153,41 @@ def test_filter_corpus_no_filters_returns_all():
 
 
 # ---------------------------------------------------------------------------
+# fetch_zotero_library_corpus
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_zotero_library_corpus_supports_group_library(config, monkeypatch):
+    from tests.canned_responses import make_stub_zotero_client
+
+    calls = []
+    stub_zot = make_stub_zotero_client()
+
+    def _fake_zotero(library_id, library_type, api_key):
+        calls.append((library_id, library_type, api_key))
+        return stub_zot
+
+    monkeypatch.setattr("zotero_arxiv_daily.executor.zotero.Zotero", _fake_zotero)
+
+    executor = Executor.__new__(Executor)
+    executor.config = config
+    library = OmegaConf.create(
+        {
+            "library_type": "group",
+            "library_id": "123456",
+            "api_key": "group-key",
+            "include_path_patterns": None,
+            "ignore_path_patterns": None,
+        }
+    )
+
+    corpus = executor.fetch_zotero_library_corpus(library)
+
+    assert len(corpus) == 2
+    assert calls == [("123456", "group", "group-key")]
+
+
+# ---------------------------------------------------------------------------
 # fetch_zotero_corpus
 # ---------------------------------------------------------------------------
 
@@ -141,6 +229,97 @@ def test_fetch_zotero_corpus_paper_with_zero_collections(config, monkeypatch):
 
     assert len(corpus) == 1
     assert corpus[0].paths == []
+
+
+def test_fetch_zotero_corpus_merges_multiple_libraries_with_per_library_filters(config, monkeypatch):
+    with open_dict(config):
+        config.zotero.libraries = [
+            {
+                "type": "user",
+                "id": "user-1",
+                "api_key": "user-key",
+                "include_path": ["personal/keep/**"],
+                "ignore_path": ["personal/keep/ignore/**"],
+            },
+            {
+                "type": "group",
+                "id": "group-1",
+                "api_key": "group-key",
+                "include_path": ["group/keep/**"],
+                "ignore_path": None,
+            },
+        ]
+
+    collections_by_library = {
+        ("user-1", "user"): [
+            {"key": "u_root", "data": {"name": "personal", "parentCollection": False}},
+            {"key": "u_keep", "data": {"name": "keep", "parentCollection": "u_root"}},
+            {"key": "u_keep_topic", "data": {"name": "topic-a", "parentCollection": "u_keep"}},
+            {"key": "u_ignore", "data": {"name": "ignore", "parentCollection": "u_keep"}},
+            {"key": "u_ignore_topic", "data": {"name": "topic-b", "parentCollection": "u_ignore"}},
+        ],
+        ("group-1", "group"): [
+            {"key": "g_root", "data": {"name": "group", "parentCollection": False}},
+            {"key": "g_keep", "data": {"name": "keep", "parentCollection": "g_root"}},
+            {"key": "g_keep_topic", "data": {"name": "topic-c", "parentCollection": "g_keep"}},
+        ],
+    }
+    items_by_library = {
+        ("user-1", "user"): [
+            {
+                "data": {
+                    "title": "Keep User Paper",
+                    "abstractNote": "Abstract A",
+                    "dateAdded": "2026-03-01T00:00:00Z",
+                    "collections": ["u_keep_topic"],
+                }
+            },
+            {
+                "data": {
+                    "title": "Ignore User Paper",
+                    "abstractNote": "Abstract B",
+                    "dateAdded": "2026-03-02T00:00:00Z",
+                    "collections": ["u_ignore_topic"],
+                }
+            },
+        ],
+        ("group-1", "group"): [
+            {
+                "data": {
+                    "title": "Keep Group Paper",
+                    "abstractNote": "Abstract C",
+                    "dateAdded": "2026-03-03T00:00:00Z",
+                    "collections": ["g_keep_topic"],
+                }
+            }
+        ],
+    }
+
+    class _StubZoteroClient:
+        def __init__(self, library_id, library_type):
+            self.library_id = library_id
+            self.library_type = library_type
+
+        def everything(self, payload):
+            return payload
+
+        def collections(self):
+            return collections_by_library[(self.library_id, self.library_type)]
+
+        def items(self, itemType=None):
+            return items_by_library[(self.library_id, self.library_type)]
+
+    monkeypatch.setattr(
+        "zotero_arxiv_daily.executor.zotero.Zotero",
+        lambda library_id, library_type, api_key: _StubZoteroClient(library_id, library_type),
+    )
+
+    executor = Executor(config)
+    corpus = executor.fetch_zotero_corpus()
+
+    assert [paper.title for paper in corpus] == ["Keep User Paper", "Keep Group Paper"]
+    assert corpus[0].paths == ["personal/keep/topic-a"]
+    assert corpus[1].paths == ["group/keep/topic-c"]
 
 
 # ---------------------------------------------------------------------------
