@@ -18,7 +18,7 @@ zotero:
 email:
   sender: ${oc.env:SENDER}
   receiver: ${oc.env:RECEIVER}
-  smtp_server: smtp.qq.com
+  smtp_server: smtp.163.com
   smtp_port: 465
   sender_password: ${oc.env:SENDER_PASSWORD}
 
@@ -27,7 +27,7 @@ llm:
     key: ${oc.env:OPENAI_API_KEY}
     base_url: ${oc.env:OPENAI_API_BASE}
   generation_kwargs:
-    model: gpt-4o-mini
+    model: DeepSeek-V4-Pro
   language: Chinese
 
 source:
@@ -37,4 +37,4 @@ source:
 executor:
   debug: ${oc.env:DEBUG,null}
   max_paper_num: 4
-  source: ['arxiv']
+  source: ["arxiv"]
